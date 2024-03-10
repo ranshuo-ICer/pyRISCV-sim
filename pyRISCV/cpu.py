@@ -24,28 +24,98 @@ def get_imm(inst, signed=True):
 
 class InstructionExecutor:
 
-
-    def execute_srli(self, cpu, inst):
-        rd, rs1, _ = uppack_inst(inst)
-        shamt = (inst >> 20) & 0x1F
-        cpu.regs[rd] = cpu.regs[rs1] >> shamt & (0xFFFFFFFF >> shamt)
+    def excute_lui(self, cpu, inst):
+        rd, _, _ = uppack_inst(inst)
+        imm = inst & 0xFFFFF000
+        imm = imm - (1 << 32) if imm >> 31 == 1 else imm
+        logging.debug("LUI: x{} = {:#010x}".format(rd, abs(imm)))
+        cpu.regs[rd] = imm
         return cpu.update_pc()
-
-    def execute_srai(self, cpu, inst):
-        rd, rs1, _ = uppack_inst(inst)
-        shamt = (inst >> 20) & 0x1F
-        cpu.regs[rd] = cpu.regs[rs1] >> shamt
+    
+    def execute_auipc(self, cpu, inst):
+        rd, _, _ = uppack_inst(inst)
+        imm = inst & 0xFFFFF000
+        imm = imm - (1 << 32) if imm >> 31 == 1 else imm
+        logging.debug("AUIPC: x{} = {:#010x}".format(rd, abs(cpu.pc + imm)))
+        cpu.regs[rd] = cpu.pc + imm
         return cpu.update_pc()
+    
+    def execute_jal(self, cpu, inst):
+        rd, _, _ = uppack_inst(inst)
+        imm = (0xFFF00000 if inst >> 31 == 1 else 0) | \
+                (inst & 0x000FF000) | \
+                ((inst >> 9) & 0x00008000) | \
+                ((inst >> 20) & 0x7FE)
+        logging.debug("JAL: x{} = {:#010x}, PC = {:#010x} + {:#010x}".format(rd, cpu.pc + 4, cpu.pc, imm))
+        cpu.regs[rd] = cpu.pc + 4
+        return cpu.pc + imm
+    
+    def execute_jalr(self, cpu, inst):
+        rd, rs1, _ = uppack_inst(inst)
+        imm = get_imm(inst)
+        logging.debug("JALR: x{} = {:#010x}, PC = x{} + {:#010x}".format(rd, cpu.pc + 4, rs1, imm))
+        cpu.regs[rd] = cpu.pc + 4
+        return (cpu.regs[rs1] + imm) & 0xFFFFFFFE
 
-    def execute_funct70x5(self, cpu, inst):
-        funct7 = (inst >> 25) & 0x7F
-        logging.debug("funct7: {:#010x}".format(funct7))
-        if funct7 == 0x00:  # c.srli
-            return self.execute_srli(cpu, inst)
-        elif funct7 == 0x20:  # c.srai
-            return self.execute_srai(cpu, inst)
+    def execute_beq(self, cpu, inst):
+        _, rs1, rs2 = uppack_inst(inst)
+        sign = (inst >> 31) & 0x1
+        imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
+        logging.debug("BEQ: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        if cpu.regs[rs1] == cpu.regs[rs2]:
+            return cpu.pc + imm
         else:
-            raise Exception("Invalid funct7: {:#010x}".format(funct7))
+            return cpu.update_pc()
+        
+    def execute_bne(self, cpu, inst):
+        _, rs1, rs2 = uppack_inst(inst)
+        sign = (inst >> 31) & 0x1
+        imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
+        logging.debug("BNE: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        if cpu.regs[rs1] != cpu.regs[rs2]:
+            return cpu.pc + imm
+        else:
+            return cpu.update_pc()
+        
+    def execute_blt(self, cpu, inst):
+        _, rs1, rs2 = uppack_inst(inst)
+        sign = (inst >> 31) & 0x1
+        imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
+        logging.debug("BLT: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        if cpu.regs[rs1] < cpu.regs[rs2]:
+            return cpu.pc + imm
+        else:
+            return cpu.update_pc()
+        
+    def execute_bge(self, cpu, inst):
+        _, rs1, rs2 = uppack_inst(inst)
+        sign = (inst >> 31) & 0x1
+        imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
+        logging.debug("BGE: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        if cpu.regs[rs1] >= cpu.regs[rs2]:
+            return cpu.pc + imm
+        else:
+            return cpu.update_pc()
+        
+    def execute_bltu(self, cpu, inst):
+        _, rs1, rs2 = uppack_inst(inst)
+        sign = (inst >> 31) & 0x1
+        imm = sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13        
+        logging.debug("BLTU: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        if cpu.regs[rs1] < cpu.regs[rs2]:
+            return cpu.pc + imm
+        else:
+            return cpu.update_pc()
+        
+    def execute_bgeu(self, cpu, inst):
+        _, rs1, rs2 = uppack_inst(inst)
+        sign = (inst >> 31) & 0x1
+        imm = sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13        
+        logging.debug("BGEU: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        if cpu.regs[rs1] >= cpu.regs[rs2]:
+            return cpu.pc + imm
+        else:
+            return cpu.update_pc()
 
     def execute_fence(self, cpu, inst):
         logging.debug("FENCE")
@@ -72,12 +142,6 @@ class InstructionExecutor:
         cpu.regs[rd] = to_signed(cpu.load(cpu.regs[rs1] + imm, 32), 32)
         return cpu.update_pc()
     
-    def execute_ld(self, cpu, inst):
-        rd, rs1, _ = uppack_inst(inst)
-        imm = get_imm(inst)
-        logging.debug("LD: x{} = mem[x{} + {}]".format(rd, rs1, imm))
-        cpu.regs[rd] = to_signed(cpu.load(cpu.regs[rs1] + imm, 64), 64)
-        return cpu.update_pc()
 
     def execute_lbu(self, cpu, inst):
         rd, rs1, _ = uppack_inst(inst)
@@ -93,13 +157,27 @@ class InstructionExecutor:
         cpu.regs[rd] = cpu.load(cpu.regs[rs1] + imm, 16)
         return cpu.update_pc()
 
-    def execute_lwu(self, cpu, inst):
-        rd, rs1, _ = uppack_inst(inst)
-        imm = get_imm(inst)
-        logging.debug("LWU: x{} = mem[x{} + {}]".format(rd, rs1, imm))
-        cpu.regs[rd] = cpu.load(cpu.regs[rs1] + imm, 32)
+    def execute_sb(self, cpu, inst):
+        _, rs1, rs2 = uppack_inst(inst)
+        imm = to_signed(((inst >> 7) & 0x1F) | ((inst >> 20) & 0xfe0), 12)
+        logging.debug("SB: mem[x{} + {}] = x{}".format(rs1, imm, rs2))
+        cpu.store(cpu.regs[rs1] + imm, cpu.regs[rs2] & 0xFF, 8)
         return cpu.update_pc()
-
+    
+    def execute_sh(self, cpu, inst):
+        _, rs1, rs2 = uppack_inst(inst)
+        imm = to_signed(((inst >> 7) & 0x1F) | ((inst >> 20) & 0xfe0), 12)
+        logging.debug("SH: mem[x{} + {}] = x{}".format(rs1, imm, rs2))
+        cpu.store(cpu.regs[rs1] + imm, cpu.regs[rs2] & 0xFFFF, 16)
+        return cpu.update_pc()
+    
+    def execute_sw(self, cpu, inst):
+        _, rs1, rs2 = uppack_inst(inst)
+        imm = to_signed(((inst >> 7) & 0x1F) | ((inst >> 20) & 0xfe0), 12)
+        logging.debug("SW: mem[x{} + {}] = x{}".format(rs1, imm, rs2))
+        cpu.store(cpu.regs[rs1] + imm, cpu.regs[rs2] & 0xFFFFFFFF, 32)
+        return cpu.update_pc()
+    
     def execute_addi(self, cpu, inst):
         rd, rs1, _ = uppack_inst(inst)
         imm = get_imm(inst)
@@ -150,44 +228,35 @@ class InstructionExecutor:
         cpu.regs[rd] = cpu.regs[rs1] & imm
         return cpu.update_pc()
 
+    def execute_srli(self, cpu, inst):
+        rd, rs1, _ = uppack_inst(inst)
+        shamt = (inst >> 20) & 0x1F
+        cpu.regs[rd] = cpu.regs[rs1] >> shamt & (0xFFFFFFFF >> shamt)
+        return cpu.update_pc()
+
+    def execute_srai(self, cpu, inst):
+        rd, rs1, _ = uppack_inst(inst)
+        shamt = (inst >> 20) & 0x1F
+        cpu.regs[rd] = cpu.regs[rs1] >> shamt
+        return cpu.update_pc()
+
+    def execute_funct70x5(self, cpu, inst):
+        funct7 = (inst >> 25) & 0x7F
+        logging.debug("funct7: {:#010x}".format(funct7))
+        if funct7 == 0x00:  # c.srli
+            return self.execute_srli(cpu, inst)
+        elif funct7 == 0x20:  # c.srai
+            return self.execute_srai(cpu, inst)
+        else:
+            raise Exception("Invalid funct7: {:#010x}".format(funct7))
+
     def execute_add(self, cpu, inst):
         rd, rs1, rs2 = uppack_inst(inst)
         logging.debug("ADD: x{} = x{} + x{}".format(rd, rs1, rs2))
         cpu.regs[rd] = cpu.regs[rs1] + cpu.regs[rs2]
         return cpu.update_pc()
     
-    def excute_lui(self, cpu, inst):
-        rd, _, _ = uppack_inst(inst)
-        imm = inst & 0xFFFFF000
-        imm = imm - (1 << 32) if imm >> 31 == 1 else imm
-        logging.debug("LUI: x{} = {:#010x}".format(rd, abs(imm)))
-        cpu.regs[rd] = imm
-        return cpu.update_pc()
     
-    def execute_auipc(self, cpu, inst):
-        rd, _, _ = uppack_inst(inst)
-        imm = inst & 0xFFFFF000
-        imm = imm - (1 << 32) if imm >> 31 == 1 else imm
-        logging.debug("AUIPC: x{} = {:#010x}".format(rd, abs(cpu.pc + imm)))
-        cpu.regs[rd] = cpu.pc + imm
-        return cpu.update_pc()
-    
-    def execute_jal(self, cpu, inst):
-        rd, _, _ = uppack_inst(inst)
-        imm = (0xFFF00000 if inst >> 31 == 1 else 0) | \
-                (inst & 0x000FF000) | \
-                ((inst >> 9) & 0x00008000) | \
-                ((inst >> 20) & 0x7FE)
-        logging.debug("JAL: x{} = {:#010x}, PC = {:#010x} + {:#010x}".format(rd, cpu.pc + 4, cpu.pc, imm))
-        cpu.regs[rd] = cpu.pc + 4
-        return cpu.pc + imm
-    
-    def execute_jalr(self, cpu, inst):
-        rd, rs1, _ = uppack_inst(inst)
-        imm = get_imm(inst)
-        logging.debug("JALR: x{} = {:#010x}, PC = x{} + {:#010x}".format(rd, cpu.pc + 4, rs1, imm))
-        cpu.regs[rd] = cpu.pc + 4
-        return (cpu.regs[rs1] + imm) & 0xFFFFFFFE
 
     def execute(self, cpu, inst):
         op = inst & 0x7F
@@ -195,18 +264,29 @@ class InstructionExecutor:
         cpu.regs[0] = 0  # set x0 to 0
         logging.debug("Executing instruction: {:#010x}, funct3: {:#04x}".format(inst, funct3))
         instruction_map = {
-            0x37: self.excute_lui,
-            0x17: self.execute_auipc,
-            0x6F: self.execute_jal,
-            0x67: self.execute_jalr,
+            0x37: self.excute_lui,          # U-type
+            0x17: self.execute_auipc,       # U-type
+            0x6F: self.execute_jal,         # J-type
+            0x67: self.execute_jalr,        # I-type
+            0x63:{
+                0x0: self.execute_beq,
+                0x1: self.execute_bne,
+                0x4: self.execute_blt,
+                0x5: self.execute_bge,
+                0x6: self.execute_bltu,
+                0x7: self.execute_bgeu,
+            },
             0x03:{
                 0x0: self.execute_lb,
                 0x1: self.execute_lh,
                 0x2: self.execute_lw,
-                0x3: self.execute_ld,
                 0x4: self.execute_lbu,
                 0x5: self.execute_lhu,
-                0x6: self.execute_lwu
+            },
+            0x23:{
+                0x0: self.execute_sb,
+                0x1: self.execute_sh,
+                0x2: self.execute_sw,
             },
             0x0f:{
                 0x0: self.execute_fence

@@ -14,6 +14,14 @@ def teardown_module():
     if os.path.exists("tmp"):
         os.system("rm -rf tmp/*")  # remove tmp directory and all its contents    
 
+def setup_function(function):
+    print("----------------------------")
+    print(f"Running {function.__name__}")
+
+def teardown_function(function):
+    print(f"Finished {function.__name__}")
+    print("")
+
 def generate_rv_assembly(c_src):
     commands = f"cd tmp && riscv64-unknown-elf-gcc -S {c_src} -o"
     result = os.system(commands)
@@ -237,20 +245,133 @@ _start:
     assert cpu.regs[1] == 1, "test_fence failed"
     assert cpu.pc == DRAM_BASE + 4 + 4, "test_fence failed"
 
-def test_lb():
+def test_sb_lb():
     code = """
 .global _start
 _start:
     addi x1, x0, 16  # 将 16 加载到 x1 中
-    addi x2, x0, 1  # 将 1 加载到 x2 中
-    lb x3, 0(x1)  # 从 x1 处偏移 0 处读取一个字节，结果放入 x3 中
-    lb x4, 1(x1)  # 从 x1 处偏移 1 处读取一个字节，结果放入 x4 中
+    sb x1, 0(x2)  # 将 x1 存入 x2 处偏移 0 处
+    lb x3, 0(x2)  # 从 x2 处偏移 0 处读取一个字节，结果放入 x3 中
+    addi x1, x0, -19  # 将 -19 加载到 x1 中
+    sb x1, -16(x2)  # 将 x1 存入 x2 处偏移 -16 处
+    lb x4, -16(x2)  # 从 x2 处偏移 -16 处读取一个字节，结果放入 x4 中
 """
-    cpu = rv_helper(code, "test_lb", 4)
-    assert cpu.regs[1] == 16, "test_lb failed"
-    assert cpu.regs[2] == 1, "test_lb failed"
-    assert cpu.regs[3] == 0, "test_lb failed"
-    assert cpu.regs[4] == 1, "test_lb failed"
+    cpu = rv_helper(code, "test_sb", 6)
+    assert cpu.regs[1] == -19, "test_sb failed"
+    assert cpu.regs[3] == 16, "test_sb failed"
+    assert cpu.regs[4] == -19, "test_sb failed"
+
+def test_sh_lh():
+    code = """
+.global _start
+_start:    
+    addi x1, x0, 16  # 将 16 加载到 x1 中
+    sh x1, -16(x2)  # 将 x1 存入 x2 处偏移 0 处
+    lh x3, -16(x2)  # 从 x2 处偏移 0 处读取两个字节，结果放入 x3 中
+    addi x1, x0, -19  # 将 -19 加载到 x1 中
+    sh x1, -32(x2)  # 将 x1 存入 x2 处偏移 -16 处
+    lh x4, -32(x2)  # 从 x2 处偏移 -16 处读取两个字节，结果放入 x4 中
+"""
+    cpu = rv_helper(code, "test_sh", 6)
+    assert cpu.regs[1] == -19, "test_sh failed"
+    assert cpu.regs[3] == 16, "test_sh failed"
+    assert cpu.regs[4] == -19, "test_sh failed"
+
+def test_sw_lw():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 16  # 将 16 加载到 x1 中
+    sw x1, -32(x2)  # 将 x1 存入 x2 处偏移 0 处
+    lw x3, -32(x2)  # 从 x2 处偏移 0 处读取四个字节，结果放入 x3 中
+    addi x1, x0, -19  # 将 -19 加载到 x1 中
+    sw x1, -64(x2)  # 将 x1 存入 x2 处偏移 -16 处
+    lw x4, -64(x2)  # 从 x2 处偏移 -16 处读取四个字节，结果放入 x4 中
+"""
+    cpu = rv_helper(code, "test_sw", 6)
+    assert cpu.regs[1] == -19, "test_sw failed"
+    assert cpu.regs[3] == 16, "test_sw failed"
+    assert cpu.regs[4] == -19, "test_sw failed"
+
+def test_beq():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 10  # 将 10 加载到 x1 中    
+    addi x2, x0, 10  # 将 20 加载到 x2 中
+    beq x1, x2, _end  # 跳转到 _end 处执行
+    addi x3, x0, 1  # 这条指令会被执行
+    j _end2  # 跳转到 _end2 处执行
+_end:
+    addi x3, x0, 2  # 这条指令会被执行
+    addi x4, x0, 3  # 这条指令会被执行
+_end2:
+    addi x0, x0, 0  # 这条指令会被执行
+"""
+    cpu = rv_helper(code, "test_beq", 6)
+    assert cpu.regs[3] == 2, "test_beq failed"
+    assert cpu.regs[4] == 3, "test_beq failed"
+
+def test_bne():
+    code = """
+.global _start
+_start:    
+    addi x1, x0, 10  # 将 10 加载到 x1 中
+    addi x2, x0, 20  # 将 20 加载到 x2 中
+    bne x1, x2, _end  # 跳转到 _end 处执行
+    addi x3, x0, 1  # 这条指令不会被执行
+    addi x4, x0, 2  # 这条指令不会被执行
+    j _end2  # 跳转到 _end2 处执行
+_end:
+    addi x3, x0, 2  # 这条指令会被执行
+    addi x4, x0, 3  # 这条指令会被执行
+_end2:
+    addi x0, x0, 0  # 这条指令会被执行
+"""
+    cpu = rv_helper(code, "test_bne", 6)
+    assert cpu.regs[3] == 2, "test_bne failed"
+    assert cpu.regs[4] == 3, "test_bne failed"
+
+def test_blt():
+    code = """
+.global _start
+_start:
+    addi x1, x0, -29  # 将 10 加载到 x1 中
+    addi x2, x0, 20  # 将 20 加载到 x2 中
+    blt x1, x2, _end  # 跳转到 _end 处执行
+    addi x3, x0, 1  # 这条指令不会被执行
+    addi x4, x0, 2  # 这条指令不会被执行
+    j _end2  # 跳转到 _end2 处执行
+_end:
+    addi x3, x0, 2  # 这条指令会被执行
+    addi x4, x0, 3  # 这条指令会被执行
+_end2:
+    addi x0, x0, 0  # 这条指令会被执行
+"""
+    cpu = rv_helper(code, "test_blt", 6)
+    assert cpu.regs[3] == 2, "test_blt failed"
+    assert cpu.regs[4] == 3, "test_blt failed"
+
+
+def test_bge():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 9  # 将 10 加载到 x1 中
+    addi x2, x0, 10  # 将 10 加载到 x2 中
+    bge x1, x2, _end  # 跳转到 _end 处执行
+    addi x3, x0, 1  # 这条指令不会被执行
+    addi x4, x0, 2  # 这条指令不会被执行
+    j _end2  # 跳转到 _end2 处执行
+_end:
+    addi x3, x0, 2  # 这条指令会被执行
+    addi x4, x0, 3  # 这条指令会被执行
+_end2:    
+    addi x0, x0, 0  # 这条指令会被执行
+"""
+    cpu = rv_helper(code, "test_bge", 6)
+    assert cpu.regs[3] == 1, "test_bge failed"
+    assert cpu.regs[4] == 2, "test_bge failed"
 
 if __name__ == '__main__':
     print("Testing RV32I instructions...")
