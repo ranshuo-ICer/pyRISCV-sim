@@ -240,27 +240,72 @@ class InstructionExecutor:
         cpu.regs[rd] = cpu.regs[rs1] >> shamt
         return cpu.update_pc()
 
-    def execute_funct70x5(self, cpu, inst):
-        funct7 = (inst >> 25) & 0x7F
-        logging.debug("funct7: {:#010x}".format(funct7))
-        if funct7 == 0x00:  # c.srli
-            return self.execute_srli(cpu, inst)
-        elif funct7 == 0x20:  # c.srai
-            return self.execute_srai(cpu, inst)
-        else:
-            raise Exception("Invalid funct7: {:#010x}".format(funct7))
-
     def execute_add(self, cpu, inst):
         rd, rs1, rs2 = uppack_inst(inst)
         logging.debug("ADD: x{} = x{} + x{}".format(rd, rs1, rs2))
         cpu.regs[rd] = cpu.regs[rs1] + cpu.regs[rs2]
         return cpu.update_pc()
     
+    def execute_sub(self, cpu, inst):
+        rd, rs1, rs2 = uppack_inst(inst)
+        logging.debug("SUB: x{} = x{} - x{}".format(rd, rs1, rs2))
+        cpu.regs[rd] = cpu.regs[rs1] - cpu.regs[rs2]
+        return cpu.update_pc()
     
+    def execute_sll(self, cpu, inst):
+        rd, rs1, rs2 = uppack_inst(inst)
+        logging.debug("SLL: x{} = x{} << x{}".format(rd, rs1, rs2))
+        cpu.regs[rd] = cpu.regs[rs1] << cpu.regs[rs2]
+        return cpu.update_pc()
+    
+    def execute_slt(self, cpu, inst):
+        rd, rs1, rs2 = uppack_inst(inst)
+        logging.debug("SLT: x{} = x{} < x{}".format(rd, rs1, rs2))
+        cpu.regs[rd] = 1 if cpu.regs[rs1] < cpu.regs[rs2] else 0
+        return cpu.update_pc()
+    
+    def execute_sltu(self, cpu, inst):
+        rd, rs1, rs2 = uppack_inst(inst)
+        logging.debug("SLTU: x{} = x{} < x{}".format(rd, rs1, rs2))
+        unsigned_rs1 = cpu.regs[rs1] & 0xFFFFFFFF
+        unsigned_rs2 = cpu.regs[rs2] & 0xFFFFFFFF
+        cpu.regs[rd] = 1 if unsigned_rs1 < unsigned_rs2 else 0
+        return cpu.update_pc()
+    
+    def execute_xor(self, cpu, inst):
+        rd, rs1, rs2 = uppack_inst(inst)
+        logging.debug("XOR: x{} = x{} ^ x{}".format(rd, rs1, rs2))
+        cpu.regs[rd] = cpu.regs[rs1] ^ cpu.regs[rs2]
+        return cpu.update_pc()
+    
+    def execute_srl(self, cpu, inst):
+        rd, rs1, rs2 = uppack_inst(inst)
+        logging.debug("SRL: x{} = x{} >> x{}".format(rd, rs1, rs2))
+        cpu.regs[rd] = (cpu.regs[rs1] & 0xFFFFFFFF) >> cpu.regs[rs2]
+        return cpu.update_pc()
+    
+    def execute_sra(self, cpu, inst):
+        rd, rs1, rs2 = uppack_inst(inst)
+        logging.debug("SRA: x{} = x{} >> x{}".format(rd, rs1, rs2))
+        cpu.regs[rd] = cpu.regs[rs1] >> cpu.regs[rs2]
+        return cpu.update_pc()
+    
+    def execute_or(self, cpu, inst):
+        rd, rs1, rs2 = uppack_inst(inst)
+        logging.debug("OR: x{} = x{} | x{}".format(rd, rs1, rs2))
+        cpu.regs[rd] = cpu.regs[rs1] | cpu.regs[rs2]
+        return cpu.update_pc()
+    
+    def execute_and(self, cpu, inst):
+        rd, rs1, rs2 = uppack_inst(inst)
+        logging.debug("AND: x{} = x{} & x{}".format(rd, rs1, rs2))
+        cpu.regs[rd] = cpu.regs[rs1] & cpu.regs[rs2]
+        return cpu.update_pc()
 
     def execute(self, cpu, inst):
         op = inst & 0x7F
         funct3 = (inst >> 12) & 0x7
+        funct7 = (inst >> 25) & 0x7F
         cpu.regs[0] = 0  # set x0 to 0
         logging.debug("Executing instruction: {:#010x}, funct3: {:#04x}".format(inst, funct3))
         instruction_map = {
@@ -288,22 +333,38 @@ class InstructionExecutor:
                 0x1: self.execute_sh,
                 0x2: self.execute_sw,
             },
-            0x0f:{
-                0x0: self.execute_fence
-            },
             0x13:{
                 0x00: self.execute_addi,
                 0x01: self.execute_slli,
                 0x02: self.execute_slti,
                 0x03: self.execute_sltiu,
                 0x04: self.execute_xori,
-                0x05: self.execute_funct70x5,
+                0x05: {
+                    0x00: self.execute_srli,
+                    0x20: self.execute_srai,
+                },
                 0x06: self.execute_ori,
                 0x07: self.execute_andi,
             },
-            0x33:{
-                0x00: self.execute_add,
-            }
+            0x33:{ # opcode 0x33
+                0x00:{  # funct3 0x00
+                    0x00: self.execute_add, # funct7 0x00 ADD
+                    0x20: self.execute_sub, # funct7 0x20 SUB
+                },
+                0x01: self.execute_sll, # funct3 0x01 SLL
+                0x02: self.execute_slt, # funct3 0x02 SLT
+                0x03: self.execute_sltu, # funct3 0x03 SLTU
+                0x04: self.execute_xor, # funct3 0x04 XOR
+                0x05:{
+                    0x00: self.execute_srl, # funct7 0x00 SRL
+                    0x20: self.execute_sra, # funct7 0x20 SRA
+                },
+                0x06: self.execute_or, # funct3 0x06 OR
+                0x07: self.execute_and, # funct3 0x07 AND
+            },
+            0x0f:{
+                0x0: self.execute_fence
+            },
         }
         exe = instruction_map.get(op, None)
         if exe is None:
@@ -312,9 +373,12 @@ class InstructionExecutor:
             exe = exe.get(funct3, None)
             if exe is None:
                 raise Exception("Invalid funct3: {:#04x}".format(funct3))
-            return exe(cpu, inst)
-        else:
-            return exe(cpu, inst)
+            if isinstance(exe, dict):
+                exe = exe.get(funct7, None)
+                if exe is None:
+                    raise Exception("Invalid funct7: {:#07x}".format(funct7))
+
+        return exe(cpu, inst)
 
 
 class CPU(object):

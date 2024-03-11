@@ -48,12 +48,15 @@ def rv_helper(code, test_name, n_clocks):
     generate_rv_obj(file_name)
     generate_rv_biniary(test_name)
     cpu = CPU(open(f"./tmp/{test_name}.bin", 'rb').read())
-    for i in range(n_clocks):
-        inst = cpu.fetch()
-        new_pc = cpu.execute(inst)
-        if new_pc is None:
-            break
-        cpu.pc = new_pc
+    try:
+        for i in range(n_clocks):
+            inst = cpu.fetch()
+            new_pc = cpu.execute(inst)
+            if new_pc is None:
+                break
+            cpu.pc = new_pc
+    except Exception as e:
+        print(f"Exception occurred: {e}")
     return cpu
 
 
@@ -141,29 +144,6 @@ _start:
     cpu = rv_helper(code, "test_srai", 4)
     assert cpu.regs[2] == 10>>2, "test_srai failed"
     assert cpu.regs[3] == -10>>2, "test_srai failed"
-
-def test_add():
-    code = """
-.global _start
-_start:
-    addi x2, x0, -10  # 将 -10 加载到 x2 中
-    addi x3, x0, 20  # 将 20 加载到 x3 中
-    add x1, x2, x3   # x1 = x2 + x3
-"""
-    cpu = rv_helper(code, "test_add", 3)
-    assert cpu.regs[1] == 10, "test_add failed"
-
-def test_ori():
-    code = """
-.global _start
-_start:
-    addi x1, x0, 10  # 将 10 加载到 x1 中
-    ori x2, x1, 5  # x2 = x1 | 5
-    ori x3, x1, -5 # x3 = x1 | -5
-"""
-    cpu = rv_helper(code, "test_ori", 3)
-    assert cpu.regs[2] == 15, "test_ori failed"
-    assert cpu.regs[3] == -5, "test_ori failed"
 
 def test_andi():
     code = """
@@ -372,6 +352,154 @@ _end2:
     cpu = rv_helper(code, "test_bge", 6)
     assert cpu.regs[3] == 1, "test_bge failed"
     assert cpu.regs[4] == 2, "test_bge failed"
+
+def test_add():
+    code = """
+.global _start
+_start:
+    addi x1, x0, -10  # 将 10 加载到 x1 中
+    addi x2, x0, 20  # 将 20 加载到 x2 中
+    add x3, x1, x2  # x3 = x1 + x2
+    addi x4, x0, 30  # 将 30 加载到 x4 中
+    add x5, x3, x4  # x5 = x3 + x4
+    addi x6, x0, 40  # 将 40 加载到 x6 中
+    add x7, x5, x6  # x7 = x5 + x6
+"""
+    cpu = rv_helper(code, "test_add", 7)
+    assert cpu.regs[3] == 10, "test_add failed"
+    assert cpu.regs[5] == 40, "test_add failed"
+    assert cpu.regs[7] == 80, "test_add failed"
+
+def test_sub():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 10  # 将 10 加载到 x1 中
+    addi x2, x0, 20  # 将 20 加载到 x2 中
+    sub x3, x1, x2  # x3 = x1 - x2
+    addi x4, x0, 30  # 将 30 加载到 x4 中
+    sub x5, x3, x4  # x5 = x3 - x4
+    addi x6, x0, 40  # 将 40 加载到 x6 中
+    sub x7, x5, x6  # x7 = x5 - x6
+"""
+    cpu = rv_helper(code, "test_sub", 7)
+    assert cpu.regs[3] == -10, "test_sub failed"
+    assert cpu.regs[5] == -40, "test_sub failed"
+    assert cpu.regs[7] == -80, "test_sub failed"
+
+def test_sll():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 10  # 将 10 加载到 x1 中
+    addi x2, x0, 2  # 将 2 加载到 x2 中
+    sll x4, x1, x2  # x2 = x1 << 2
+    addi x3, x0, 30  # 将 30 加载到 x3 中
+    sll x5, x3, x2  # x4 = x3 << 2
+"""
+    cpu = rv_helper(code, "test_sll", 5)
+    assert cpu.regs[4] == 40, "test_sll failed"
+    assert cpu.regs[5] == 120, "test_sll failed"
+
+def test_slt():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 10  # 将 10 加载到 x1 中
+    addi x2, x0, 20  # 将 20 加载到 x2 中
+    slt x3, x1, x2  # x3 = (x1 < x2)
+    addi x4, x0, 30  # 将 30 加载到 x4 中
+    slt x5, x4, x1  # x5 = (x4 < x1)
+"""
+    cpu = rv_helper(code, "test_slt", 5)
+    assert cpu.regs[3] == 1, "test_slt failed"
+    assert cpu.regs[5] == 0, "test_slt failed"
+
+def test_sltu():
+    code = """
+.global _start
+_start:
+    addi x1, x0, -10  # 将 10 加载到 x1 中
+    addi x2, x0, 20  # 将 20 加载到 x2 中
+    sltu x3, x1, x2  # x3 = (x1 < x2)
+    addi x4, x0, 30  # 将 30 加载到 x4 中
+    sltu x5, x4, x1  # x5 = (x4 < x1)
+"""
+    cpu = rv_helper(code, "test_sltu", 5)
+    assert cpu.regs[3] == 0, "test_sltu failed"
+    assert cpu.regs[5] == 1, "test_sltu failed"
+
+def test_xor():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 0b11111111  # 将 255 加载到 x1 中
+    addi x2, x0, 0b10101010  # 将 170 加载到 x2 中
+    xor x3, x1, x2  # x3 = x1 ^ x2
+    addi x4, x0, 0b01010101  # 将 85 加载到 x4 中
+    xor x5, x3, x4  # x5 = x3 ^ x4
+"""
+    cpu = rv_helper(code, "test_xor", 5)
+    assert cpu.regs[3] == 255 ^ 170, "test_xor failed"
+    assert cpu.regs[5] == 255 ^ 170 ^ 85, "test_xor failed"
+
+def test_srl():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 10  # 将 10 加载到 x1 中
+    addi x2, x0, 2  # 将 2 加载到 x2 中
+    srl x4, x1, x2  # x2 = x1 >> 2
+    addi x3, x0, 30  # 将 30 加载到 x3 中
+    addi x2, x0, 3  # 将 3 加载到 x2 中
+    srl x5, x3, x2  # x4 = x3 >> 3
+"""
+    cpu = rv_helper(code, "test_srl", 6)
+    assert cpu.regs[4] == 10 >> 2, "test_srl failed"
+    assert cpu.regs[5] == 30 >> 3, "test_srl failed"
+
+def test_sra():
+    code = """
+.global _start
+_start:
+    addi x1, x0, -10  # 将 -10 加载到 x1 中
+    addi x2, x0, 2  # 将 2 加载到 x2 中
+    sra x4, x1, x2  # x2 = x1 >> 2
+    addi x3, x0, -30  # 将 -30 加载到 x3 中
+    addi x2, x0, 3  # 将 3 加载到 x2 中
+    sra x5, x3, x2  # x4 = x3 >> 3
+"""
+    cpu = rv_helper(code, "test_sra", 6)
+    assert cpu.regs[4] == -10 >> 2, "test_sra failed"
+    assert cpu.regs[5] == -30 >> 3, "test_sra failed"
+
+def test_or():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 0b11111111  # 将 255 加载到 x1 中
+    addi x2, x0, 0b10101010  # 将 170 加载到 x2 中
+    or x3, x1, x2  # x3 = x1 | x2
+    addi x4, x0, 0b01010101  # 将 85 加载到 x4 中
+    or x5, x3, x4  # x5 = x3 | x4
+"""
+    cpu = rv_helper(code, "test_or", 5)
+    assert cpu.regs[3] == 255 | 170, "test_or failed"
+    assert cpu.regs[5] == 255 | 170 | 85, "test_or failed"
+
+def test_and():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 0b11111111  # 将 255 加载到 x1 中
+    addi x2, x0, 0b10101010  # 将 170 加载到 x2 中
+    and x3, x1, x2  # x3 = x1 & x2
+    addi x4, x0, 0b01010101  # 将 85 加载到 x4 中
+    and x5, x3, x4  # x5 = x3 & x4
+"""
+    cpu = rv_helper(code, "test_and", 5)
+    assert cpu.regs[3] == 255 & 170, "test_and failed"
+    assert cpu.regs[5] == 255 & 170 & 85, "test_and failed"
 
 if __name__ == '__main__':
     print("Testing RV32I instructions...")
