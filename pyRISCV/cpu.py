@@ -21,6 +21,48 @@ def get_imm(inst, signed=True):
     else:
         return imm
 
+class Csr:
+    def __init__(self):
+        self.csrs = [0] * NUM_CSRS
+    
+    def dump_csrs(self):
+        print("-----------------------------")
+        print("CSRs:")
+        print("mstatus: {:#010x}".format(self.load(MSTATUS)))
+        print("mtvec: {:#010x}".format(self.load(MTVEC)))
+        print("mepc: {:#010x}".format(self.load(MEPC)))
+        print("mcause: {:#010x}".format(self.load(MCAUSE)))
+        print()
+        print("sstatus: {:#010x}".format(self.load(SSTATUS)))
+        print("stvec: {:#010x}".format(self.load(STVEC)))
+        print("sepc: {:#010x}".format(self.load(SEPC)))
+        print("scause: {:#010x}".format(self.load(SCAUSE)))
+
+    def load(self, addr):
+        if addr == SIE:
+            return self.csrs[MIE] & self.csrs[MIDELEG]
+        elif addr == SIP:
+            return self.csrs[MIP] & self.csrs[MIDELEG]
+        elif addr == SSTATUS:
+            return self.csrs[SSTATUS] & MASK_SSTATUS
+        else:
+            return self.csrs[addr]
+
+    def store(self, addr, data):
+        if addr == SIE:
+            self.csrs[MIE] = (self.csrs[MIE] & ~self.csrs[MIDELEG]) | (data & self.csrs[MIDELEG])
+        elif addr == SIP:
+            self.csrs[MIP] = (self.csrs[MIP] & ~self.csrs[MIDELEG]) | (data & self.csrs[MIDELEG])
+        elif addr == SSTATUS:
+            self.csrs[SSTATUS] = (self.csrs[SSTATUS] & ~MASK_SSTATUS) | (data & MASK_SSTATUS)
+        else:
+            self.csrs[addr] = data
+
+    def is_medelegated(self, value):
+        return ((self.csrs[MEDELEG] >> value) & 0x1) == 1
+    
+    def is_midelegated(self, cause):
+        return ((self.csrs[MIDELEG] >> cause) & 0x1) == 1
 
 class InstructionExecutor:
 
@@ -302,6 +344,60 @@ class InstructionExecutor:
         cpu.regs[rd] = cpu.regs[rs1] & cpu.regs[rs2]
         return cpu.update_pc()
 
+    def execute_csrrw(self, cpu, inst):
+        rd, rs1, _ = uppack_inst(inst)
+        csr_addr = get_imm(inst, signed=False)
+        logging.debug("CSRRW: x{} = CSR[{:#010x}], x{}".format(rd, csr_addr, rs1))
+        t = cpu.csr.load(csr_addr)
+        cpu.csr.store(csr_addr, (cpu.regs[rs1] & 0xFFFFFFFF))
+        cpu.regs[rd] = to_signed(t, 32)
+        return cpu.update_pc()
+
+    def execute_csrrs(self, cpu, inst):
+        rd, rs1, _ = uppack_inst(inst)
+        csr_addr = get_imm(inst, signed=False)
+        logging.debug("CSRRS: x{} = CSR[{:#010x}], x{}".format(rd, csr_addr, rs1))
+        t = cpu.csr.load(csr_addr)
+        cpu.csr.store(csr_addr, t | (cpu.regs[rs1] & 0xFFFFFFFF))
+        cpu.regs[rd] = to_signed(t, 32)
+        return cpu.update_pc()
+    
+    def execute_csrrc(self, cpu, inst):
+        rd, rs1, _ = uppack_inst(inst)
+        csr_addr = get_imm(inst, signed=False)
+        logging.debug("CSRRC: x{} = CSR[{:#010x}], x{}".format(rd, csr_addr, rs1))
+        t = cpu.csr.load(csr_addr)
+        cpu.csr.store(csr_addr, t & (~(cpu.regs[rs1] & 0xFFFFFFFF)))
+        cpu.regs[rd] = to_signed(t, 32)
+        return cpu.update_pc()
+    
+    def execute_csrrwi(self, cpu, inst):
+        rd, imm, _ = uppack_inst(inst)
+        csr_addr = get_imm(inst, signed=False)
+        logging.debug("CSRRWI: x{} = CSR[{:#010x}], {:#010x}".format(rd, csr_addr, imm))
+        t = cpu.csr.load(csr_addr)
+        cpu.csr.store(csr_addr, (imm & 0xFFFFFFFF))
+        cpu.regs[rd] = to_signed(t, 32)
+        return cpu.update_pc()
+    
+    def execute_csrrsi(self, cpu, inst):
+        rd, imm, _ = uppack_inst(inst)
+        csr_addr = get_imm(inst, signed=False)
+        logging.debug("CSRRSI: x{} = CSR[{:#010x}], {:#010x}".format(rd, csr_addr, imm))
+        t = cpu.csr.load(csr_addr)
+        cpu.csr.store(csr_addr, t | (imm & 0xFFFFFFFF))
+        cpu.regs[rd] = to_signed(t, 32)
+        return cpu.update_pc()
+    
+    def execute_csrrci(self, cpu, inst):
+        rd, imm, _ = uppack_inst(inst)
+        csr_addr = get_imm(inst, signed=False)
+        logging.debug("CSRRCI: x{} = CSR[{:#010x}], {:#010x}".format(rd, csr_addr, imm))
+        t = cpu.csr.load(csr_addr)
+        cpu.csr.store(csr_addr, t & (~(imm & 0xFFFFFFFF)))
+        cpu.regs[rd] = to_signed(t, 32)
+        return cpu.update_pc()
+
     def execute(self, cpu, inst):
         op = inst & 0x7F
         funct3 = (inst >> 12) & 0x7
@@ -365,6 +461,14 @@ class InstructionExecutor:
             0x0f:{
                 0x0: self.execute_fence
             },
+            0x73:{
+                0x1: self.execute_csrrw,
+                0x2: self.execute_csrrs,
+                0x3: self.execute_csrrc,
+                0x5: self.execute_csrrwi,
+                0x6: self.execute_csrrsi,
+                0x7: self.execute_csrrci,
+            }
         }
         exe = instruction_map.get(op, None)
         if exe is None:
@@ -398,6 +502,7 @@ class CPU(object):
         self.bus = BUS(program)
         
         self.regs[2] = DRAM_END  # set stack pointer to end of DRAM
+        self.csr = Csr()
 
     def load(self, address, size):
         return self.bus.load(address, size)

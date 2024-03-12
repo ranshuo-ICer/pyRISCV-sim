@@ -1,6 +1,7 @@
 from pyRISCV import CPU
-from pyRISCV import DRAM_BASE
+from pyRISCV import params
 import os
+import subprocess
 import logging
 import pytest
 
@@ -31,15 +32,21 @@ def generate_rv_assembly(c_src):
 def generate_rv_obj(assembly):
     base_name = os.path.basename(assembly).split('.')[0]
     commands = f"cd tmp && riscv64-unknown-elf-gcc -Wl,-Ttext=0x0 -march=rv32i -mabi=ilp32 -nostdlib -o {base_name} {assembly}"
-    result = os.system(commands)
-    if result!= 0:
-        raise Exception(f"Failed to generate RV object. Command: {commands}")
+    process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    if process.returncode!= 0:
+        raise Exception(f"Failed to generate RV object. Command: {commands} -> \n{stderr.decode()}")
+    
+    # result = os.system(commands)
+    # if result!= 0:
+    #     raise Exception(f"Failed to generate RV object. Command: {commands}")
 
 def generate_rv_biniary(obj):
     commands = f"cd tmp && riscv64-unknown-elf-objcopy -O binary {obj} {obj}.bin"
-    result = os.system(commands)
-    if result!= 0:
-        raise Exception(f"Failed to generate RV binary. Command: {commands}")
+    process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    if process.returncode!= 0:
+        raise Exception(f"Failed to generate RV binary. Command: {commands}:\nError: {stderr.decode()}")
 
 def rv_helper(code, test_name, n_clocks):
     file_name = f"{test_name}.s"
@@ -176,8 +183,8 @@ _start:
     auipc x2, 0x5678  # 将 0x56780000 加载到 x2 中
 """
     cpu = rv_helper(code, "test_auipc", 2)
-    assert cpu.regs[1] == DRAM_BASE + -2147483648, "test_auipc failed"
-    assert cpu.regs[2] == DRAM_BASE + 0x05678000 + 4, "test_auipc failed"
+    assert cpu.regs[1] == params.DRAM_BASE + -2147483648, "test_auipc failed"
+    assert cpu.regs[2] == params.DRAM_BASE + 0x05678000 + 4, "test_auipc failed"
 
 def test_jal():
     code = """
@@ -192,11 +199,11 @@ _func:
     jal x4, 0x1200
 """
     cpu = rv_helper(code, "test_jal", 4)
-    assert cpu.regs[1] == DRAM_BASE + 4, "test_jal failed"
+    assert cpu.regs[1] == params.DRAM_BASE + 4, "test_jal failed"
     assert cpu.regs[2] == 3, "test_jal failed"
     assert cpu.regs[3] == 4, "test_jal failed"
-    assert cpu.regs[4] == DRAM_BASE + 5*4 + 4, "test_jal failed"
-    assert cpu.pc == DRAM_BASE + 0x1200, "test_jal failed"
+    assert cpu.regs[4] == params.DRAM_BASE + 5*4 + 4, "test_jal failed"
+    assert cpu.pc == params.DRAM_BASE + 0x1200, "test_jal failed"
 
 def test_jalr():
     code = """
@@ -209,7 +216,7 @@ _start:
 """
     cpu = rv_helper(code, "test_jalr", 3)
     assert cpu.regs[1] == 16, "test_jalr failed"
-    assert cpu.regs[2] == DRAM_BASE + 12, "test_jalr failed"
+    assert cpu.regs[2] == params.DRAM_BASE + 12, "test_jalr failed"
     assert cpu.regs[3] == 2, "test_jalr failed"
     assert cpu.pc == 16 - 4, "test_jalr failed"
 
@@ -223,7 +230,7 @@ _start:
 """
     cpu = rv_helper(code, "test_fence", 2)
     assert cpu.regs[1] == 1, "test_fence failed"
-    assert cpu.pc == DRAM_BASE + 4 + 4, "test_fence failed"
+    assert cpu.pc == params.DRAM_BASE + 4 + 4, "test_fence failed"
 
 def test_sb_lb():
     code = """
@@ -500,6 +507,120 @@ _start:
     cpu = rv_helper(code, "test_and", 5)
     assert cpu.regs[3] == 255 & 170, "test_and failed"
     assert cpu.regs[5] == 255 & 170 & 85, "test_and failed"
+
+def test_csrrw():
+    code = """
+.global _start
+_start:
+    li x1, 10  # 将 10 加载到 x1 中
+    csrrw x2, mstatus, x1  # 将 mstatus 寄存器的值写入 x2
+"""
+    cpu = rv_helper(code, "test_csrrw", 2)
+    assert cpu.regs[2] == 0, "test_csrrw failed"
+    assert cpu.csr.load(params.MSTATUS) == 10, "test_csrrw failed"
+
+    code = """
+.global _start
+_start:
+    li x2, -5
+    li x3, 10
+    csrrw x1, mstatus, x2  # 将 5 写入 mstatus 寄存器
+    csrrw x4, mstatus, x3  # 将 10 写入 mstatus 寄存器
+"""
+    cpu = rv_helper(code, "test_csrrw", 4)
+    assert cpu.regs[1] == 0, "test_csrrw failed"
+    assert cpu.regs[4] == -5, "test_csrrw failed"
+    assert cpu.csr.load(params.MSTATUS) == 10, "test_csrrw failed"
+
+def test_csrrs():
+    code = """
+.global _start
+_start:
+    li x2, 5  # 将 10 加载到 x1 中
+    csrrs x1, mstatus, x2  # 将 mstatus 寄存器的值写入 x1
+    li x3, 10
+    csrrs x4, mstatus, x3  # 将 10 写入 mstatus 寄存器
+"""
+    cpu = rv_helper(code, "test_csrrs", 4)
+    assert cpu.regs[1] == 0, "test_csrrs failed"
+    assert cpu.regs[4] == 5, "test_csrrs failed"
+    assert cpu.csr.load(params.MSTATUS) == 10|5, "test_csrrs failed"
+
+def test_csrrc():
+    code = """
+.global _start
+_start:
+    li x2, 5  # 将 10 加载到 x1 中
+    csrrc x1, mstatus, x2  # 将 mstatus 寄存器的值写入 x1
+    li x3, 10
+    csrrc x4, mstatus, x3  # 将 10 写入 mstatus 寄存器
+"""
+    cpu = rv_helper(code, "test_csrrc", 4)
+    assert cpu.regs[1] == 0, "test_csrrc failed"
+    assert cpu.regs[4] == 0, "test_csrrc failed"
+    assert cpu.csr.load(params.MSTATUS) == 0, "test_csrrc failed"
+
+def test_csrrwi():
+    code = """
+.global _start
+_start:
+    csrrwi x1, mstatus, 10  # 将 mstatus 寄存器的值写入 x1
+"""
+    cpu = rv_helper(code, "test_csrrwi", 1)
+    assert cpu.regs[1] == 0, "test_csrrwi failed"
+    assert cpu.csr.load(params.MSTATUS) == 10, "test_csrrwi failed"
+
+def test_csrrsi():
+    code = """
+.global _start
+_start:
+    li x2, 5  # 5 加载到 x2 中
+    csrrsi x1, mstatus, 10  # 将 mstatus 寄存器的值写入 x1
+    li x3, 10
+    csrrsi x4, mstatus, 5  # 将 10 写入 mstatus 寄存器
+"""
+    cpu = rv_helper(code, "test_csrrsi", 4)
+    assert cpu.regs[1] == 0, "test_csrrsi failed"
+    assert cpu.regs[4] == 10, "test_csrrsi failed"
+    assert cpu.csr.load(params.MSTATUS) == 10|5, "test_csrrsi failed"
+
+def test_csrrci():
+    code = """
+.global _start
+_start:
+    li x2, 5  # 将 10 加载到 x1 中
+    csrrci x1, mstatus, 10  # 将 mstatus 寄存器的值写入 x1
+    li x3, 10
+    csrrci x4, mstatus, 5  # 将 10 写入 mstatus 寄存器
+"""
+    cpu = rv_helper(code, "test_csrrci", 4)
+    assert cpu.regs[1] == 0, "test_csrrci failed"
+    assert cpu.regs[4] == 0, "test_csrrci failed"
+    assert cpu.csr.load(params.MSTATUS) == 0, "test_csrrci failed"
+
+def test_csr():
+    code = """
+.global _start
+_start:
+    addi t0, zero, 1
+    addi t1, zero, 2
+    addi t2, zero, 3
+    csrrw zero, mstatus, t0
+    csrrs zero, mtvec, t1
+    csrrw zero, mepc, t2
+    csrrc t2, mepc, zero
+    csrrwi zero, sstatus, 4
+    csrrsi zero, stvec, 5
+    csrrwi zero, sepc, 6
+    csrrci zero, sepc, 0
+"""
+    cpu = rv_helper(code, "test_csr", len(code.split('\n'))-4)
+    assert cpu.csr.load(params.MSTATUS) == 1, "test_csr failed"
+    assert cpu.csr.load(params.MTVEC) == 2, "test_csr failed"
+    assert cpu.csr.load(params.MEPC) == 3, "test_csr failed"
+    assert cpu.csr.load(params.SSTATUS) == 0, "test_csr failed"
+    assert cpu.csr.load(params.STVEC) == 5, "test_csr failed"
+    assert cpu.csr.load(params.SEPC) == 6, "test_csr failed"
 
 if __name__ == '__main__':
     print("Testing RV32I instructions...")
