@@ -86,7 +86,7 @@ class InstructionExecutor:
         rd, _, _ = uppack_inst(inst)
         imm = (0xFFF00000 if inst >> 31 == 1 else 0) | \
                 (inst & 0x000FF000) | \
-                ((inst >> 9) & 0x00008000) | \
+                ((inst >> 9) & 0x00000800) | \
                 ((inst >> 20) & 0x7FE)
         logging.debug("JAL: x{} = {:#010x}, PC = {:#010x} + {:#010x}".format(rd, cpu.pc + 4, cpu.pc, imm))
         cpu.regs[rd] = cpu.pc + 4
@@ -103,7 +103,7 @@ class InstructionExecutor:
         _, rs1, rs2 = uppack_inst(inst)
         sign = (inst >> 31) & 0x1
         imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
-        logging.debug("BEQ: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        logging.debug("BEQ: x{} = x{}? pc = {:#010x} + {:#010x}".format(rs1, rs2, cpu.pc, imm))
         if cpu.regs[rs1] == cpu.regs[rs2]:
             return cpu.pc + imm
         else:
@@ -113,7 +113,7 @@ class InstructionExecutor:
         _, rs1, rs2 = uppack_inst(inst)
         sign = (inst >> 31) & 0x1
         imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
-        logging.debug("BNE: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        logging.debug("BNE: x{} = x{}? pc = {:#010x} + {:#010x}".format(rs1, rs2, cpu.pc, imm))
         if cpu.regs[rs1] != cpu.regs[rs2]:
             return cpu.pc + imm
         else:
@@ -123,7 +123,7 @@ class InstructionExecutor:
         _, rs1, rs2 = uppack_inst(inst)
         sign = (inst >> 31) & 0x1
         imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
-        logging.debug("BLT: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        logging.debug("BLT: x{} = x{}? pc = {:#010x} + {:#010x}".format(rs1, rs2, cpu.pc, imm))
         if cpu.regs[rs1] < cpu.regs[rs2]:
             return cpu.pc + imm
         else:
@@ -133,7 +133,7 @@ class InstructionExecutor:
         _, rs1, rs2 = uppack_inst(inst)
         sign = (inst >> 31) & 0x1
         imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
-        logging.debug("BGE: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
+        logging.debug("BGE: x{} = x{}? pc = {:#010x} + {:#010x}".format(rs1, rs2, cpu.pc, imm))
         if cpu.regs[rs1] >= cpu.regs[rs2]:
             return cpu.pc + imm
         else:
@@ -142,9 +142,9 @@ class InstructionExecutor:
     def execute_bltu(self, cpu, inst):
         _, rs1, rs2 = uppack_inst(inst)
         sign = (inst >> 31) & 0x1
-        imm = sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13        
-        logging.debug("BLTU: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
-        if cpu.regs[rs1] < cpu.regs[rs2]:
+        imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
+        logging.debug("BLTU: x{} = x{}? pc = {:#010x} + {:#010x}".format(rs1, rs2, cpu.pc, imm))
+        if (cpu.regs[rs1] & 0xFFFFFFFF) < (cpu.regs[rs2] & 0xFFFFFFFF):
             return cpu.pc + imm
         else:
             return cpu.update_pc()
@@ -152,9 +152,9 @@ class InstructionExecutor:
     def execute_bgeu(self, cpu, inst):
         _, rs1, rs2 = uppack_inst(inst)
         sign = (inst >> 31) & 0x1
-        imm = sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13        
-        logging.debug("BGEU: x{} = x{}? pc = {} + {}".format(rs1, rs2, cpu.pc, imm))
-        if cpu.regs[rs1] >= cpu.regs[rs2]:
+        imm = to_signed(sign << 12 | ((inst >> 7) & 0x1E) | ((inst >> 20) & 0x7e0) | ((inst << 4) & 0x800), 13)
+        logging.debug("BGEU: x{} = x{}? pc = {:#010x} + {:#010x}".format(rs1, rs2, cpu.pc, imm))
+        if (cpu.regs[rs1] & 0xFFFFFFFF) >= (cpu.regs[rs2] & 0xFFFFFFFF):
             return cpu.pc + imm
         else:
             return cpu.update_pc()
@@ -447,16 +447,28 @@ class InstructionExecutor:
                     0x00: self.execute_add, # funct7 0x00 ADD
                     0x20: self.execute_sub, # funct7 0x20 SUB
                 },
-                0x01: self.execute_sll, # funct3 0x01 SLL
-                0x02: self.execute_slt, # funct3 0x02 SLT
-                0x03: self.execute_sltu, # funct3 0x03 SLTU
-                0x04: self.execute_xor, # funct3 0x04 XOR
+                0x01:{ # funct3 0x01
+                    0x00:self.execute_sll, # funct7 0x00 SLL
+                }, 
+                0x02:{# funct3 0x02
+                    0x00: self.execute_slt,  # funct7 0x00 SLT
+                },
+                0x03:{# funct3 0x03
+                    0x00: self.execute_sltu,  # funct7 0x00 SLTU
+                },
+                0x04:{# funct3 0x04
+                    0x00: self.execute_xor,  # funct7 0x00 XOR
+                },
                 0x05:{
                     0x00: self.execute_srl, # funct7 0x00 SRL
                     0x20: self.execute_sra, # funct7 0x20 SRA
                 },
-                0x06: self.execute_or, # funct3 0x06 OR
-                0x07: self.execute_and, # funct3 0x07 AND
+                0x06:{# funct3 0x06
+                    0x00: self.execute_or,  # funct7 0x00 OR
+                },
+                0x07:{# funct3 0x07
+                    0x00: self.execute_and,  # funct7 0x00 AND
+                }
             },
             0x0f:{
                 0x0: self.execute_fence
@@ -505,9 +517,11 @@ class CPU(object):
         self.csr = Csr()
 
     def load(self, address, size):
+        address &= 0xFFFFFFFF  # make sure address is 32-bit
         return self.bus.load(address, size)
     
     def store(self, address, value, size):
+        address &= 0xFFFFFFFF  # make sure address is 32-bit
         self.bus.store(address, value, size)
 
     def update_pc(self):
