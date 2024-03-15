@@ -3,6 +3,10 @@ DRAM_BASE = 0x80000000  # Base address of DRAM
 DRAM_SIZE = 1024 * 1024 * 1  # 128MB
 DRAM_END = DRAM_BASE + DRAM_SIZE - 1  # End address of DRAM
 
+SERIAL_BASE = 0x10000000  # Base address of serial device
+SERIAL_SIZE = 0x1000  # Size of serial device
+SERIAL_END = SERIAL_BASE + SERIAL_SIZE - 1  # End address of serial device
+
 # Machine CSR parameters
 NUM_CSRS = 4096  # Number of CSRs
 # Machine Information Registers (M-mode CSRs)
