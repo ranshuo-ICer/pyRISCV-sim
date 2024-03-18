@@ -578,6 +578,47 @@ _start:
     assert cpu.csr.load(params.STVEC) == 5, "test_csr failed"
     assert cpu.csr.load(params.SEPC) == 6, "test_csr failed"
 
+def test_mul():
+    code = """
+.global _start
+_start:
+    addi x1, x0, 10  # 将 10 加载到 x1 中
+    addi x2, x0, 2  # 将 2 加载到 x2 中
+    mul x3, x1, x2  # x3 = x1 * x2
+    addi x4, x0, -30  # 将 -30 加载到 x4 中
+    addi x2, x0, 3  # 将 3 加载到 x2 中
+    mul x5, x4, x2  # x5 = x4 * x2
+"""
+    cpu = rv_helper(code, "test_mul", 6)
+    assert cpu.regs[3] == 10 * 2, "test_mul failed"
+    assert cpu.regs[5] == -30 * 3, "test_mul failed"
+
+def test_mulh():
+    code = """
+.global _start
+_start:
+    li x1, 0x12345678  # 将 0x12345678 加载到 x1 中
+    li x2, 0x87654321  # 将 0x87654321 加载到 x2 中
+    mulh x3, x1, x2  # x3 = (x1 * x2) >> 32
+    mulh x5, x1, x2  # x5 = (x1 * x2) >> 32
+"""
+    cpu = rv_helper(code, "test_mulh", 6)
+    assert cpu.regs[3] == (0x12345678 * -2023406815) >> 32, "test_mulh failed"
+    assert cpu.regs[5] == (0x12345678 * -2023406815) >> 32, "test_mulh failed"
+
+def test_mulhsu():
+    code = """
+.global _start
+_start:
+    li x1, 0x12345678  # 将 0x12345678 加载到 x1 中
+    li x2, 0x87654321  # 将 0x87654321 加载到 x2 中
+    mulhsu x3, x1, x2  # x3 = (x1 * x2) >> 32
+    mulhsu x5, x1, x2  # x5 = (x1 * x2) >> 32
+"""
+    cpu = rv_helper(code, "test_mulhsu", 6)
+    assert cpu.regs[3] == (0x12345678 * 0x87654321) >> 32, "test_mulhsu failed"
+    assert cpu.regs[5] == (0x12345678 * 0x87654321) >> 32, "test_mulhsu failed"
+
 if __name__ == '__main__':
     print("Testing RV32I instructions...")
     print(__file__)

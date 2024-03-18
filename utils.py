@@ -12,7 +12,7 @@ def generate_rv_assembly(c_src):
 
 def generate_rv_obj(assembly):
     base_name = os.path.basename(assembly).split('.')[0]
-    commands = f"cd tmp && riscv64-unknown-elf-gcc -Wl,-Ttext=0x0 -march=rv32i -mabi=ilp32 -nostdlib -o {base_name} {assembly}"
+    commands = f"cd tmp && riscv64-unknown-elf-gcc -Wl,-Ttext=0x0 -march=rv32im -mabi=ilp32 -nostdlib -o {base_name} {assembly}"
     process = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = process.communicate()
     if process.returncode!= 0:
