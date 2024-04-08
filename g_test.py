@@ -619,6 +619,18 @@ _start:
     assert cpu.regs[3] == (0x12345678 * 0x87654321) >> 32, "test_mulhsu failed"
     assert cpu.regs[5] == (0x12345678 * 0x87654321) >> 32, "test_mulhsu failed"
 
+def test_sret():
+    code = """
+.global _start
+_start:
+    addi x2, x0, 8  # 将 8 加载到 x2 中
+    csrrw x1, sepc, x2  # 将 8 写入 spec 寄存器
+    sret
+"""
+    cpu = rv_helper(code, "test_sret", 3)
+    assert cpu.csr.load(params.SEPC) == 8, "test_sret failed"
+    assert cpu.csr.load(params.MSTATUS) & (1 << 1) == 0, "test_sret failed"
+
 if __name__ == '__main__':
     print("Testing RV32I instructions...")
     print(__file__)
