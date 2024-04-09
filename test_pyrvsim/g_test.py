@@ -1,8 +1,11 @@
-from pyRISCV import params
+import sys
+sys.path.append("..")
 import os
 import logging
 import pytest
 from utils import rv_helper
+from pyRISCV import params
+
 
 logging.basicConfig(level=logging.DEBUG)
 

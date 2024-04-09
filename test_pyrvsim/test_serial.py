@@ -1,9 +1,18 @@
-from g_test import rv_helper
+from utils import rv_helper
 from pyRISCV import params 
 import logging
 
 logging.basicConfig(level=logging.INFO)
 logging.disable(logging.CRITICAL)
+
+import os
+def setup_module():
+    if not os.path.exists("tmp"):
+        os.mkdir("tmp")
+
+def teardown_module():
+    if os.path.exists("tmp"):
+        os.system("rm -rf tmp/*")  
 
 def test_serial():
     code = f"""

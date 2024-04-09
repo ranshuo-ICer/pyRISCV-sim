@@ -161,4 +161,4 @@ cython_debug/
 
 .vscode/
 .pytest_cache/
-tmp/*
+test_pyrvsim/tmp/*

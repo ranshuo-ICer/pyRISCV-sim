@@ -2,6 +2,7 @@ from .cpu import CPU
 import logging
 import cmd
 import time
+from .rv_exception import RVException
 
 class SDB(cmd.Cmd):
     """
@@ -31,11 +32,15 @@ class SDB(cmd.Cmd):
         self.cmd_dict["d"] = self.do_d
 
     def execute_once(self):
-        inst = self.cpu.fetch()
-        if inst == 0:
-            return False
-        new_pc = self.cpu.execute(inst)
-        self.cpu.pc = new_pc
+        try:
+            inst = self.cpu.fetch()
+            if inst == 0:
+                return False
+            new_pc = self.cpu.execute(inst)
+            self.cpu.pc = new_pc
+        except RVException as e:
+            logging.info(f"Exception occurred: {e}")
+            self.cpu.handle_exception(e)
         return True
     
     def execute(self, n_cycles=1):

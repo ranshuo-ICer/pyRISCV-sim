@@ -1,5 +1,6 @@
 from .params import *
 import logging
+from .rv_enum import *
 
 def uppack_inst(inst):
     rd = (inst >> 7) & 0x1F
@@ -124,7 +125,7 @@ class InstructionExecutor:
     def execute_sret(self, cpu, inst):
         logging.debug("SRET")
         sstatus = cpu.csr.load(SSTATUS)
-        cpu.privilegeLevel = (sstatus & MASK_SPP) >> 8 # set privilege level to spp
+        cpu.privilegeLevel = PrivilegeLevel((sstatus & MASK_SPP) >> 8) # set privilege level to spp
         spie = (sstatus & MASK_SPIE) >> 5 # get spie
         sstatus = (sstatus & ~MASK_SIE) | (spie << 1) # set spie to spp
         sstatus = sstatus | MASK_SPIE # set spie to 1
@@ -137,12 +138,12 @@ class InstructionExecutor:
     def execute_mret(self, cpu, inst):
         logging.debug("MRET")
         mstatus = cpu.csr.load(MSTATUS)
-        cpu.privilegeLevel = (mstatus & MASK_MPP) >> 11
+        cpu.privilegeLevel = PrivilegeLevel((mstatus & MASK_MPP) >> 11)
         mpie = (mstatus & MASK_MPIE) >> 7
         mstatus = (mstatus & ~MASK_MIE) | (mpie << 3)
         mstatus = mstatus | MASK_MPIE
         mstatus = mstatus & ~MASK_MPP # set mpp to 0
-        if (mstatus & MASK_MPP) != PrivilegeLevel.MACHINE:
+        if (mstatus & MASK_MPP) != PrivilegeLevel.MACHINE.value: # if mpp is not 0b11, set mprv to 1
             mstatus = mstatus & ~MASK_MPRV # clear mprv if not machine mode
         cpu.csr.store(MSTATUS, mstatus)
         mepc = cpu.csr.load(MEPC) & ~0b11

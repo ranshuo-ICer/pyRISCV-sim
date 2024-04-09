@@ -1,6 +1,8 @@
 from .params import *
 from .dram import DRAM
 from .serial import Serial
+from .rv_exception import RVException, ExceptionType
+import logging
 # from cache import Cache
 
 class BUS:
@@ -14,7 +16,8 @@ class BUS:
         elif address >= SERIAL_BASE and address <= SERIAL_END:
             return self.serial.load(address, size)
         else:
-            raise Exception("LoadAccessFault at address 0x{:08x}".format(address))
+            logging.warning("LoadAccessFault at address 0x{:08x}".format(address))
+            raise RVException(ExceptionType.LOAD_ACCESS_FAULT, address)
         
     def store(self, address, value, size):
         if address >= DRAM_BASE and address <= DRAM_END:
@@ -22,4 +25,6 @@ class BUS:
         elif address >= SERIAL_BASE and address <= SERIAL_END:
             self.serial.store(address, value, size)
         else:
-            raise Exception("StoreAccessFault at address 0x{:08x}".format(address))
+            logging.warning("StoreAccessFault at address 0x{:08x}".format(address))
+            raise RVException(ExceptionType.STORE_AMO_ACCESS_FAULT, address)
+
